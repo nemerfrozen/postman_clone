@@ -58,8 +58,14 @@ interface AiChatMessage {
   text: string
 }
 
+interface AiModelOption {
+  id: string
+  provider: 'anthropic' | 'deepseek'
+}
+
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const ENV_STORAGE_PREFIX = 'postman-clone-env:'
+const AI_CONFIG_STORAGE_KEY = 'postman-clone-ai-config'
 const STANDARD_HEADER_KEYS = [
   'Accept',
   'Accept-Language',
@@ -162,6 +168,8 @@ export default function Home() {
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('headers')
   const [showNewProject, setShowNewProject] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
+  const [showEnvModal, setShowEnvModal] = useState(false)
+  const [showAiConfigModal, setShowAiConfigModal] = useState(false)
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({})
   const [sidebarSearch, setSidebarSearch] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
@@ -182,6 +190,9 @@ export default function Home() {
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
+  const [aiModelOptions, setAiModelOptions] = useState<AiModelOption[]>([])
+  const [aiModelsLoading, setAiModelsLoading] = useState(false)
+  const [aiModelsError, setAiModelsError] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -238,6 +249,29 @@ export default function Home() {
       JSON.stringify({ baseUrl, token })
     )
   }, [activeProjectId, baseUrl, token])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(AI_CONFIG_STORAGE_KEY)
+      if (!saved) return
+      const parsed = JSON.parse(saved) as { provider?: 'anthropic' | 'deepseek'; model?: string }
+      if (parsed.provider === 'anthropic' || parsed.provider === 'deepseek') {
+        setAiProvider(parsed.provider)
+      }
+      if (typeof parsed.model === 'string') {
+        setAiModel(parsed.model)
+      }
+    } catch {
+      // ignore invalid localStorage payload
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(
+      AI_CONFIG_STORAGE_KEY,
+      JSON.stringify({ provider: aiProvider, model: aiModel })
+    )
+  }, [aiProvider, aiModel])
 
   const selectRequest = (req: StoredRequest) => {
     setActiveRequestId(req.id)
@@ -618,6 +652,27 @@ export default function Home() {
     setBodyContent(formatJsonString(lastAssistant.text))
   }
 
+  const loadModelsForProvider = async (provider: 'anthropic' | 'deepseek') => {
+    setAiModelsLoading(true)
+    setAiModelsError('')
+    try {
+      const res = await fetch(`/api/ai/models?provider=${provider}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'No fue posible cargar modelos')
+      const models = Array.isArray(data?.models) ? (data.models as AiModelOption[]) : []
+      setAiModelOptions(models)
+      if (models.length > 0 && !models.some(m => m.id === aiModel)) {
+        setAiModel(models[0].id)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setAiModelsError(msg)
+      setAiModelOptions([])
+    } finally {
+      setAiModelsLoading(false)
+    }
+  }
+
   const activeProject = projects.find(p => p.id === activeProjectId)
   const activeRequest = activeProject?.requests.find(r => r.id === activeRequestId)
   const sidebarSearchLower = sidebarSearch.trim().toLowerCase()
@@ -765,6 +820,12 @@ export default function Home() {
             onChange={e => setRequestName(e.target.value)}
             onBlur={handleSave}
           />
+          <button className="btn-secondary text-xs py-1 px-2" onClick={() => setShowEnvModal(true)}>
+            Env
+          </button>
+          <button className="btn-secondary text-xs py-1 px-2" onClick={() => setShowAiConfigModal(true)}>
+            IA Config
+          </button>
           {saveMessage && (
             <span className={`text-xs ${saveMessage.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
               {saveMessage.text}
@@ -773,26 +834,6 @@ export default function Home() {
           {rawBodyInvalid && (
             <span className="text-xs text-red-400">Body raw debe ser un JSON válido.</span>
           )}
-        </div>
-
-        {/* Environments */}
-        <div className="px-3 py-2 flex items-center gap-2 border-b border-[#3c3c3c]">
-          <span className="text-xs text-gray-500 w-16 flex-shrink-0">Base URL</span>
-          <input
-            className="flex-1 text-xs font-mono"
-            placeholder="https://api.example.com"
-            value={baseUrl}
-            onChange={e => setBaseUrl(e.target.value)}
-            onBlur={handleSaveEnvironments}
-          />
-          <span className="text-xs text-gray-500 w-12 flex-shrink-0">Token</span>
-          <input
-            className="flex-1 text-xs font-mono"
-            placeholder="Bearer ... o token"
-            value={token}
-            onChange={e => setToken(e.target.value)}
-            onBlur={handleSaveEnvironments}
-          />
         </div>
 
         {/* Method + URL + Buttons */}
@@ -1062,6 +1103,105 @@ export default function Home() {
             <div className="flex justify-end gap-2">
               <button className="btn-secondary text-xs" onClick={() => setShowNewProject(false)}>Cancelar</button>
               <button className="btn-primary text-xs" onClick={createProject}>Crear</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEnvModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEnvModal(false)}>
+          <div className="bg-[#252526] border border-[#3c3c3c] rounded-lg p-4 w-[560px] max-w-[92vw]" onClick={e => e.stopPropagation()}>
+            <h2 className="text-sm font-semibold text-white mb-3">Environments</h2>
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-gray-400 mb-1">Base URL</div>
+                <input
+                  className="w-full text-xs font-mono"
+                  placeholder="https://api.example.com"
+                  value={baseUrl}
+                  onChange={e => setBaseUrl(e.target.value)}
+                />
+              </div>
+              <div>
+                <div className="text-xs text-gray-400 mb-1">Token</div>
+                <input
+                  className="w-full text-xs font-mono"
+                  placeholder="Bearer ... o token"
+                  value={token}
+                  onChange={e => setToken(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button className="btn-secondary text-xs" onClick={() => setShowEnvModal(false)}>Cerrar</button>
+              <button
+                className="btn-primary text-xs"
+                onClick={async () => {
+                  await handleSaveEnvironments()
+                  setShowEnvModal(false)
+                }}
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAiConfigModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAiConfigModal(false)}>
+          <div className="bg-[#252526] border border-[#3c3c3c] rounded-lg p-4 w-[560px] max-w-[92vw]" onClick={e => e.stopPropagation()}>
+            <h2 className="text-sm font-semibold text-white mb-3">Configuración IA Global</h2>
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-gray-400 mb-1">Proveedor</div>
+                <select
+                  className="w-full text-xs"
+                  value={aiProvider}
+                  onChange={async e => {
+                    const next = e.target.value as 'anthropic' | 'deepseek'
+                    setAiProvider(next)
+                    await loadModelsForProvider(next)
+                  }}
+                >
+                  <option value="deepseek">deepseek</option>
+                  <option value="anthropic">anthropic</option>
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs text-gray-400">Modelo</div>
+                  <button
+                    className="btn-secondary text-xs py-1 px-2"
+                    onClick={() => loadModelsForProvider(aiProvider)}
+                    disabled={aiModelsLoading}
+                  >
+                    {aiModelsLoading ? 'Cargando...' : 'Cargar modelos'}
+                  </button>
+                </div>
+                {aiModelOptions.length > 0 ? (
+                  <select
+                    className="w-full text-xs font-mono"
+                    value={aiModel}
+                    onChange={e => setAiModel(e.target.value)}
+                  >
+                    {aiModelOptions.map(m => (
+                      <option key={m.id} value={m.id}>{m.id}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="w-full text-xs font-mono"
+                    placeholder="modelo IA global"
+                    value={aiModel}
+                    onChange={e => setAiModel(e.target.value)}
+                  />
+                )}
+                {aiModelsError && <div className="text-xs text-red-400 mt-1">{aiModelsError}</div>}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button className="btn-primary text-xs" onClick={() => setShowAiConfigModal(false)}>Aceptar</button>
             </div>
           </div>
         </div>
