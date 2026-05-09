@@ -493,6 +493,7 @@ export default function Home() {
   const activeProject = projects.find(p => p.id === activeProjectId)
   const activeRequest = activeProject?.requests.find(r => r.id === activeRequestId)
   const sidebarSearchLower = sidebarSearch.trim().toLowerCase()
+  const usesBaseUrlVariable = /\{\{\s*baseUrl\s*\}\}/i.test(url)
   const groupedRequestsByProject = new Map(
     projects.map(project => {
       const byUrl = project.requests.reduce<Record<string, StoredRequest[]>>((acc, req) => {
@@ -663,8 +664,8 @@ export default function Home() {
             ))}
           </select>
           <input
-            className="flex-1 text-sm font-mono"
-            placeholder="https://api.example.com/endpoint"
+            className={`flex-1 text-sm font-mono ${usesBaseUrlVariable ? 'text-blue-400' : ''} placeholder:text-blue-400`}
+            placeholder="{{baseUrl}}/endpoint"
             value={url}
             onChange={e => setUrl(e.target.value)}
           />
