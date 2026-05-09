@@ -53,6 +53,11 @@ interface TestResult {
   error: boolean
 }
 
+interface AiChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+}
+
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const ENV_STORAGE_PREFIX = 'postman-clone-env:'
 const STANDARD_HEADER_KEYS = [
@@ -171,6 +176,12 @@ export default function Home() {
   const [responseTestScript, setResponseTestScript] = useState('return response.status >= 200 && response.status < 300')
   const [responseTestResult, setResponseTestResult] = useState<{ pass: boolean; message: string } | null>(null)
   const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
+  const [showAiPanel, setShowAiPanel] = useState(false)
+  const [aiProvider, setAiProvider] = useState<'anthropic' | 'deepseek'>('deepseek')
+  const [aiModel, setAiModel] = useState('')
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -571,6 +582,42 @@ export default function Home() {
     }
   }
 
+  const sendAiPrompt = async () => {
+    const prompt = aiPrompt.trim()
+    if (!prompt) return
+
+    setAiLoading(true)
+    setAiMessages(prev => [...prev, { role: 'user', text: prompt }])
+    setAiPrompt('')
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiProvider,
+          model: aiModel.trim() || undefined,
+          prompt,
+          system: 'Responde breve y en formato JSON válido cuando sea posible.',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Error IA')
+      const assistantText = typeof data?.text === 'string' ? data.text : JSON.stringify(data, null, 2)
+      setAiMessages(prev => [...prev, { role: 'assistant', text: assistantText }])
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setAiMessages(prev => [...prev, { role: 'assistant', text: `Error: ${msg}` }])
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const useLastAiResponseInBody = () => {
+    const lastAssistant = [...aiMessages].reverse().find(m => m.role === 'assistant')
+    if (!lastAssistant) return
+    setBodyContent(formatJsonString(lastAssistant.text))
+  }
+
   const activeProject = projects.find(p => p.id === activeProjectId)
   const activeRequest = activeProject?.requests.find(r => r.id === activeRequestId)
   const sidebarSearchLower = sidebarSearch.trim().toLowerCase()
@@ -846,14 +893,28 @@ export default function Home() {
                   <option value="raw">raw</option>
                 </select>
               {bodyType === 'raw' && (
-                <textarea
-                  ref={textareaRef}
-                  className={`w-full h-40 text-xs font-mono ${rawBodyInvalid ? 'border-red-500' : ''}`}
-                  placeholder='{"key": "value"}'
-                  value={bodyContent}
-                  onChange={e => setBodyContent(formatJsonString(e.target.value))}
-                  onBlur={() => setBodyContent(prev => formatJsonString(prev))}
-                />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <textarea
+                      ref={textareaRef}
+                      className={`w-full h-40 text-xs font-mono ${rawBodyInvalid ? 'border-red-500' : ''}`}
+                      placeholder='{"key": "value"}'
+                      value={bodyContent}
+                      onChange={e => setBodyContent(formatJsonString(e.target.value))}
+                      onBlur={() => setBodyContent(prev => formatJsonString(prev))}
+                    />
+                  </div>
+                  <div className="w-10 flex-shrink-0 flex flex-col items-end">
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Asistente IA"
+                      onClick={() => setShowAiPanel(true)}
+                    >
+                      IA
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -1032,6 +1093,51 @@ export default function Home() {
               </button>
               <button className="btn-primary text-xs" onClick={confirmImportCollection} disabled={!importProjectName.trim()}>
                 Importar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAiPanel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAiPanel(false)}>
+          <div className="bg-[#252526] border border-[#3c3c3c] rounded-lg p-4 w-[560px] max-w-[92vw]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-white">Asistente IA</h2>
+              <button className="text-xs text-gray-400 hover:text-white" onClick={() => setShowAiPanel(false)}>✕</button>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <select className="text-xs flex-1" value={aiProvider} onChange={e => setAiProvider(e.target.value as 'anthropic' | 'deepseek')}>
+                <option value="deepseek">deepseek</option>
+                <option value="anthropic">anthropic</option>
+              </select>
+              <input
+                className="text-xs flex-1"
+                placeholder="modelo (opcional)"
+                value={aiModel}
+                onChange={e => setAiModel(e.target.value)}
+              />
+            </div>
+            <div className="h-44 overflow-auto text-xs font-mono border border-[#3c3c3c] rounded p-2 mb-2">
+              {aiMessages.length === 0 && <div className="text-gray-500">Haz una pregunta para generar JSON</div>}
+              {aiMessages.map((m, idx) => (
+                <div key={`${m.role}-${idx}`} className={`mb-1 ${m.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>
+                  <strong>{m.role === 'user' ? 'Tú' : 'IA'}:</strong> {m.text}
+                </div>
+              ))}
+            </div>
+            <textarea
+              className="w-full h-20 text-xs font-mono mb-2"
+              placeholder="Pide un body JSON..."
+              value={aiPrompt}
+              onChange={e => setAiPrompt(e.target.value)}
+            />
+            <div className="flex gap-2 justify-end">
+              <button className="btn-secondary text-xs py-1 px-2" onClick={useLastAiResponseInBody}>
+                Usar en Body
+              </button>
+              <button className="btn-primary text-xs py-1 px-2" onClick={sendAiPrompt} disabled={aiLoading || !aiPrompt.trim()}>
+                {aiLoading ? '...' : 'Enviar'}
               </button>
             </div>
           </div>
