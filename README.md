@@ -163,7 +163,7 @@ npm run lint
 Endpoint interno:
 
 - `POST /api/ai/chat`
-- `GET /api/ai/models?provider=anthropic|deepseek`
+- `GET /api/ai/models?provider=anthropic|deepseek|ollama`
 
 Body:
 
@@ -182,11 +182,13 @@ Body:
 
 - `anthropic`
 - `deepseek`
+- `ollama`
 
 Listar modelos:
 
 - `GET /api/ai/models?provider=anthropic`
 - `GET /api/ai/models?provider=deepseek`
+- `GET /api/ai/models?provider=ollama`
 - `GET /api/ai/models` (ambos)
 
 Variables de entorno:
@@ -196,6 +198,8 @@ Variables de entorno:
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_BASE_URL` (opcional, default `https://api.deepseek.com`)
 - `DEEPSEEK_MODEL` (opcional, default `deepseek-chat`)
+- `OLLAMA_BASE_URL` (opcional, default `http://localhost:11434`)
+- `OLLAMA_MODEL` (opcional, default `llama3.1`)
 
 Buenas prácticas de seguridad:
 

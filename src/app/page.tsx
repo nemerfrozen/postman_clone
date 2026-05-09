@@ -61,7 +61,7 @@ interface AiChatMessage {
 
 interface AiModelOption {
   id: string
-  provider: 'anthropic' | 'deepseek'
+  provider: 'anthropic' | 'deepseek' | 'ollama'
 }
 
 interface ResponseLineTest {
@@ -196,7 +196,7 @@ export default function Home() {
   const [responseTestsSummary, setResponseTestsSummary] = useState<{ passed: number; total: number } | null>(null)
   const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
   const [showAiPanel, setShowAiPanel] = useState(false)
-  const [aiProvider, setAiProvider] = useState<'anthropic' | 'deepseek'>('deepseek')
+  const [aiProvider, setAiProvider] = useState<'anthropic' | 'deepseek' | 'ollama'>('deepseek')
   const [aiModel, setAiModel] = useState('')
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
@@ -265,8 +265,8 @@ export default function Home() {
     try {
       const saved = localStorage.getItem(AI_CONFIG_STORAGE_KEY)
       if (!saved) return
-      const parsed = JSON.parse(saved) as { provider?: 'anthropic' | 'deepseek'; model?: string }
-      if (parsed.provider === 'anthropic' || parsed.provider === 'deepseek') {
+      const parsed = JSON.parse(saved) as { provider?: 'anthropic' | 'deepseek' | 'ollama'; model?: string }
+      if (parsed.provider === 'anthropic' || parsed.provider === 'deepseek' || parsed.provider === 'ollama') {
         setAiProvider(parsed.provider)
       }
       if (typeof parsed.model === 'string') {
@@ -809,7 +809,7 @@ export default function Home() {
     }
   }
 
-  const loadModelsForProvider = async (provider: 'anthropic' | 'deepseek') => {
+  const loadModelsForProvider = async (provider: 'anthropic' | 'deepseek' | 'ollama') => {
     setAiModelsLoading(true)
     setAiModelsError('')
     try {
@@ -1371,13 +1371,14 @@ export default function Home() {
                   className="w-full text-xs"
                   value={aiProvider}
                   onChange={async e => {
-                    const next = e.target.value as 'anthropic' | 'deepseek'
+                    const next = e.target.value as 'anthropic' | 'deepseek' | 'ollama'
                     setAiProvider(next)
                     await loadModelsForProvider(next)
                   }}
                 >
                   <option value="deepseek">deepseek</option>
                   <option value="anthropic">anthropic</option>
+                  <option value="ollama">ollama</option>
                 </select>
               </div>
               <div>
@@ -1462,9 +1463,10 @@ export default function Home() {
               <button id="btn-close-ai-chat-modal" className="text-xs text-gray-400 hover:text-white" onClick={() => setShowAiPanel(false)}>✕</button>
             </div>
             <div className="flex items-center gap-2 mb-2">
-              <select className="text-xs flex-1" value={aiProvider} onChange={e => setAiProvider(e.target.value as 'anthropic' | 'deepseek')}>
+              <select className="text-xs flex-1" value={aiProvider} onChange={e => setAiProvider(e.target.value as 'anthropic' | 'deepseek' | 'ollama')}>
                 <option value="deepseek">deepseek</option>
                 <option value="anthropic">anthropic</option>
+                <option value="ollama">ollama</option>
               </select>
               <input
                 className="text-xs flex-1"
