@@ -1,36 +1,176 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Postman Clone
 
-## Getting Started
+Cliente API web construido con Next.js + Prisma (SQLite), con interfaz estilo Postman para:
 
-First, run the development server:
+- Organizar solicitudes por proyectos
+- Definir environments por proyecto (`baseUrl` y `token`)
+- Ejecutar solicitudes HTTP
+- Ver respuestas JSON formateadas con resaltado de sintaxis
+- Ejecutar tests rápidos sobre la respuesta
+- Ejecutar pruebas en lote (`Run All Tests`)
+
+## Stack
+
+- Next.js (App Router)
+- React
+- Prisma
+- SQLite (`prisma/dev.db`)
+
+## Requisitos
+
+- Node.js 20+
+- npm
+
+## Instalación
+
+```bash
+npm install
+```
+
+## Configuración de base de datos
+
+Sincronizar esquema y generar cliente Prisma:
+
+```bash
+npx prisma db push
+npx prisma generate
+```
+
+## Ejecutar en desarrollo
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+App local:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `http://localhost:3000`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Autenticación
 
-## Learn More
+La aplicación requiere login.
 
-To learn more about Next.js, take a look at the following resources:
+Credenciales por defecto:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Usuario: `admin`
+- Clave: `Q1w2e3r4/*`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Notas:
 
-## Deploy on Vercel
+- El login valida contra la tabla `AppUser` en SQLite.
+- Se usa cookie de sesión `pc_session`.
+- Las rutas están protegidas por `middleware`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Uso funcional
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 1. Proyectos y solicitudes
+
+- Crea proyectos desde el panel lateral.
+- Cada proyecto contiene solicitudes (`requests`).
+- Puedes importar colecciones JSON de Postman.
+
+### 2. Environments por proyecto
+
+Campos disponibles en la parte superior:
+
+- `Base URL`
+- `Token`
+
+Comportamiento:
+
+- Se guardan en BD por proyecto.
+- También se guardan en `localStorage` por proyecto activo.
+- No se pierden al cambiar de request dentro del mismo proyecto.
+
+Variables soportadas:
+
+- `{{baseUrl}}`
+- `{{token}}`
+
+Se reemplazan en:
+
+- URL
+- Headers
+- Body (raw)
+
+### 3. Header Authorization automático
+
+Si `token` tiene valor, se agrega automáticamente:
+
+- `Authorization: Bearer <token>`
+
+Solo se agrega si no existe ya un header `Authorization` en la request.
+
+### 4. Panel inferior (30/70)
+
+Distribución vertical:
+
+- Parte superior (`30%`): edición `Headers` / `Body`
+- Parte inferior (`70%`): panel de resultados
+
+Pestañas del panel de resultados:
+
+- `Response`: body JSON formateado y con colores
+- `Headers`: headers de respuesta
+- `Request`: snapshot de la petición completa enviada
+- `Test`: editor para validar la respuesta recibida
+
+### 5. Tests de respuesta
+
+En pestaña `Test`, el script tiene acceso a:
+
+- `response.status`
+- `response.headers`
+- `response.body`
+
+Debe retornar `true` para marcar el test como OK.
+
+Ejemplo:
+
+```js
+return response.status >= 200 && response.status < 300
+```
+
+### 6. Run All Tests
+
+Ejecuta todas las solicitudes de todos los proyectos y muestra:
+
+- Estado por request
+- Duración
+- Resumen de éxito/fallo
+
+## Formato de respuesta
+
+La app trata la respuesta como JSON y la formatea en pantalla.
+
+Si el backend remoto no retorna JSON válido, se muestra un JSON de error controlado:
+
+```json
+{ "error": "La respuesta del servidor no es JSON válido" }
+```
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run start
+npm run lint
+```
+
+## Estructura principal
+
+- `src/app/page.tsx`: UI principal (editor, envío, response, tests)
+- `src/app/login/page.tsx`: login
+- `src/app/api/proxy/route.ts`: proxy HTTP hacia APIs externas
+- `src/app/api/projects/*`: CRUD de proyectos/environments
+- `src/app/api/requests/*`: CRUD de requests
+- `src/app/api/import/route.ts`: importación de colección Postman
+- `src/app/api/login/route.ts`: autenticación
+- `src/app/api/logout/route.ts`: cierre de sesión
+- `src/middleware.ts`: protección de rutas por cookie
+- `prisma/schema.prisma`: modelo de datos
+
+## Notas
+
+- `npm run lint` puede reportar advertencias/errores existentes en hooks de `page.tsx` (reglas React hooks), independientes del flujo funcional principal.

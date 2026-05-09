@@ -33,6 +33,14 @@ interface ProxyResponse {
   body: unknown
 }
 
+interface SentRequestSnapshot {
+  method: string
+  url: string
+  headers: Header[]
+  bodyType: string
+  body?: string
+}
+
 interface TestResult {
   requestName: string
   projectName: string
@@ -93,7 +101,7 @@ export default function Home() {
   const [requestName, setRequestName] = useState('Nueva solicitud')
   const [response, setResponse] = useState<ProxyResponse | null>(null)
   const [loading, setLoading] = useState(false)
-  const [resTab, setResTab] = useState<'body' | 'headers'>('body')
+  const [resTab, setResTab] = useState<'body' | 'headers' | 'request' | 'test'>('body')
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('headers')
   const [showNewProject, setShowNewProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
@@ -102,6 +110,9 @@ export default function Home() {
   const [loadingProjects, setLoadingProjects] = useState(true)
   const [testResults, setTestResults] = useState<TestResult[] | null>(null)
   const [runningTests, setRunningTests] = useState(false)
+  const [lastRequest, setLastRequest] = useState<SentRequestSnapshot | null>(null)
+  const [responseTestScript, setResponseTestScript] = useState('return response.status >= 200 && response.status < 300')
+  const [responseTestResult, setResponseTestResult] = useState<{ pass: boolean; message: string } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -221,6 +232,7 @@ export default function Home() {
   const handleSend = async () => {
     setLoading(true)
     setResponse(null)
+    setResponseTestResult(null)
     const fullUrl = resolveUrl(url, baseUrl, token)
     try {
       const cleanedHeaders = headers
@@ -235,6 +247,14 @@ export default function Home() {
           value: `Bearer ${token.trim()}`,
         })
       }
+      const requestBody = bodyType === 'raw' ? applyEnvironments(bodyContent, baseUrl, token) : undefined
+      setLastRequest({
+        method,
+        url: fullUrl,
+        headers: cleanedHeaders,
+        bodyType,
+        body: requestBody,
+      })
       const res = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -242,7 +262,7 @@ export default function Home() {
           method,
           url: fullUrl,
           headers: JSON.stringify(cleanedHeaders),
-          body: bodyType === 'raw' ? applyEnvironments(bodyContent, baseUrl, token) : undefined,
+          body: requestBody,
           bodyType,
         }),
       })
@@ -423,6 +443,26 @@ export default function Home() {
   const handleLogout = async () => {
     await fetch('/api/logout', { method: 'POST' })
     window.location.href = '/login'
+  }
+
+  const runResponseTest = () => {
+    if (!response) {
+      setResponseTestResult({ pass: false, message: 'No hay respuesta para evaluar' })
+      return
+    }
+    try {
+      // eslint-disable-next-line no-new-func
+      const fn = new Function('response', responseTestScript)
+      const result = fn(response)
+      if (result === true) {
+        setResponseTestResult({ pass: true, message: 'Test OK' })
+      } else {
+        setResponseTestResult({ pass: false, message: `Test falló. Resultado: ${JSON.stringify(result)}` })
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setResponseTestResult({ pass: false, message: `Error en test: ${message}` })
+    }
   }
 
   const activeProject = projects.find(p => p.id === activeProjectId)
@@ -634,13 +674,13 @@ export default function Home() {
           <div className="response-panel h-[70%] min-h-0 flex flex-col border-t border-[#3c3c3c]">
             <div className="flex items-center border-b border-[#3c3c3c] px-3">
               <div className="flex items-center gap-3">
-                {['body', 'headers'].map(t => (
+                {['body', 'headers', 'request', 'test'].map(t => (
                   <button
                     key={t}
                     className={`py-2 text-xs font-medium ${resTab === t ? 'tab-active' : 'tab-inactive'}`}
-                    onClick={() => setResTab(t as typeof resTab)}
+                    onClick={() => setResTab(t as 'body' | 'headers' | 'request' | 'test')}
                   >
-                    {t === 'body' ? 'Response' : 'Headers'}
+                    {t === 'body' ? 'Response' : t === 'headers' ? 'Headers' : t === 'request' ? 'Request' : 'Test'}
                   </button>
                 ))}
               </div>
@@ -704,6 +744,31 @@ export default function Home() {
                   {Object.entries(response.headers).map(([k, v]) => (
                     <div key={k} className="mb-0.5"><span className="text-blue-400">{k}:</span> {v}</div>
                   ))}
+                </div>
+              )}
+              {resTab === 'request' && (
+                <pre className="json-view text-xs font-mono whitespace-pre-wrap break-all">
+                  {renderJsonSyntax(lastRequest ?? { message: 'Aún no se ha enviado ninguna petición' })}
+                </pre>
+              )}
+              {resTab === 'test' && (
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-400">
+                    Usa `response.status`, `response.headers`, `response.body`. Debe retornar `true` para pasar.
+                  </div>
+                  <textarea
+                    className="w-full h-28 text-xs font-mono"
+                    value={responseTestScript}
+                    onChange={e => setResponseTestScript(e.target.value)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button className="btn-primary text-xs" onClick={runResponseTest}>Run Test</button>
+                    {responseTestResult && (
+                      <span className={`text-xs ${responseTestResult.pass ? 'text-green-400' : 'text-red-400'}`}>
+                        {responseTestResult.message}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
