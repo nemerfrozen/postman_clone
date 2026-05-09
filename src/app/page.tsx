@@ -89,6 +89,8 @@ const renderJsonSyntax = (value: unknown): ReactNode[] => {
   return nodes
 }
 
+const toSearchText = (value: unknown) => (typeof value === 'string' ? value.toLowerCase() : '')
+
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
@@ -550,12 +552,19 @@ export default function Home() {
           </div>
         </div>
         <div className="px-3 py-2 border-b border-[#3c3c3c]">
-          <input
-            className="w-full text-xs"
-            placeholder="Buscar proyecto, URL o request..."
-            value={sidebarSearch}
-            onChange={e => setSidebarSearch(e.target.value)}
-          />
+          <div className="flex items-center gap-2">
+            <input
+              className="w-full text-xs"
+              placeholder="Buscar proyecto, URL o request..."
+              value={sidebarSearch}
+              onChange={e => setSidebarSearch(e.target.value)}
+            />
+            {sidebarSearch && (
+              <button className="btn-secondary text-xs py-1 px-2" onClick={() => setSidebarSearch('')}>
+                Limpiar
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto scrollbar-custom">
           {loadingProjects ? (
@@ -566,11 +575,11 @@ export default function Home() {
             projects
               .filter(project => {
                 if (!sidebarSearchLower) return true
-                const projectMatch = project.name.toLowerCase().includes(sidebarSearchLower)
+                const projectMatch = toSearchText(project.name).includes(sidebarSearchLower)
                 if (projectMatch) return true
                 return project.requests.some(req =>
-                  req.name.toLowerCase().includes(sidebarSearchLower) ||
-                  (req.url || '').toLowerCase().includes(sidebarSearchLower)
+                  toSearchText(req.name).includes(sidebarSearchLower) ||
+                  toSearchText(req.url).includes(sidebarSearchLower)
                 )
               })
               .map(project => (
@@ -597,11 +606,11 @@ export default function Home() {
                     <button className="text-xs text-gray-500 hover:text-red-400 py-0 px-1" onClick={(e) => { e.stopPropagation(); deleteProject(project.id) }}>×</button>
                   </div>
                 </div>
-                {activeProjectId === project.id && !collapsedProjects[project.id] && Object.entries(groupedRequestsByProject.get(project.id) || {})
+                {!collapsedProjects[project.id] && Object.entries(groupedRequestsByProject.get(project.id) || {})
                   .filter(([groupUrl, groupRequests]) => {
                     if (!sidebarSearchLower) return true
-                    if (groupUrl.toLowerCase().includes(sidebarSearchLower)) return true
-                    return groupRequests.some(req => req.name.toLowerCase().includes(sidebarSearchLower))
+                    if (toSearchText(groupUrl).includes(sidebarSearchLower)) return true
+                    return groupRequests.some(req => toSearchText(req.name).includes(sidebarSearchLower))
                   })
                   .map(([groupUrl, groupRequests]) => (
                   <div key={`${project.id}-${groupUrl}`}>
@@ -612,8 +621,8 @@ export default function Home() {
                       .filter(req => {
                         if (!sidebarSearchLower) return true
                         return (
-                          req.name.toLowerCase().includes(sidebarSearchLower) ||
-                          (req.url || '').toLowerCase().includes(sidebarSearchLower)
+                          toSearchText(req.name).includes(sidebarSearchLower) ||
+                          toSearchText(req.url).includes(sidebarSearchLower)
                         )
                       })
                       .map(req => (
