@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint",
-    "vercel": "npm install & npx prisma db push &npx prisma generate"
+    "lint": "eslint"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
