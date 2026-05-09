@@ -91,6 +91,27 @@ const renderJsonSyntax = (value: unknown): ReactNode[] => {
 
 const toSearchText = (value: unknown) => (typeof value === 'string' ? value.toLowerCase() : '')
 
+const formatJsonString = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2)
+  } catch {
+    return value
+  }
+}
+
+const isValidJsonString = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  try {
+    JSON.parse(trimmed)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
@@ -184,7 +205,7 @@ export default function Home() {
     setUrl(req.url)
     setRequestName(req.name)
     setBodyType(req.bodyType)
-    setBodyContent(req.bodyContent)
+    setBodyContent(formatJsonString(req.bodyContent))
     try {
       setHeaders(JSON.parse(req.headers))
     } catch {
@@ -271,6 +292,12 @@ export default function Home() {
           value: `Bearer ${token.trim()}`,
         })
       }
+      if (bodyType === 'raw' && !cleanedHeaders.some(h => h.key.toLowerCase() === 'content-type')) {
+        cleanedHeaders.push({
+          key: 'Content-Type',
+          value: 'application/json',
+        })
+      }
       const requestBody = bodyType === 'raw' ? applyEnvironments(bodyContent, baseUrl, token) : undefined
       setLastRequest({
         method,
@@ -326,6 +353,12 @@ export default function Home() {
             resolvedHeaders.push({
               key: 'Authorization',
               value: `Bearer ${projectToken.trim()}`,
+            })
+          }
+          if (req.bodyType === 'raw' && !resolvedHeaders.some(h => h.key.toLowerCase() === 'content-type')) {
+            resolvedHeaders.push({
+              key: 'Content-Type',
+              value: 'application/json',
             })
           }
           parsedHeaders = JSON.stringify(resolvedHeaders)
@@ -513,6 +546,7 @@ export default function Home() {
   const activeRequest = activeProject?.requests.find(r => r.id === activeRequestId)
   const sidebarSearchLower = sidebarSearch.trim().toLowerCase()
   const usesBaseUrlVariable = /\{\{\s*baseUrl\s*\}\}/i.test(url)
+  const rawBodyInvalid = bodyType === 'raw' && !isValidJsonString(bodyContent)
   const groupedRequestsByProject = new Map(
     projects.map(project => {
       const byUrl = project.requests.reduce<Record<string, StoredRequest[]>>((acc, req) => {
@@ -660,6 +694,9 @@ export default function Home() {
               {saveMessage.text}
             </span>
           )}
+          {rawBodyInvalid && (
+            <span className="text-xs text-red-400">Body raw debe ser un JSON válido.</span>
+          )}
         </div>
 
         {/* Environments */}
@@ -700,10 +737,10 @@ export default function Home() {
             value={url}
             onChange={e => setUrl(e.target.value)}
           />
-          <button className="btn-primary text-sm" onClick={handleSend} disabled={loading}>
+          <button className="btn-primary text-sm" onClick={handleSend} disabled={loading || rawBodyInvalid}>
             {loading ? 'Enviando...' : 'Send'}
           </button>
-          <button className="btn-secondary text-sm" onClick={handleSave}>Save</button>
+          <button className="btn-secondary text-sm" onClick={handleSave} disabled={rawBodyInvalid}>Save</button>
         </div>
 
         {/* Tabs: Params | Headers | Body */}
@@ -777,17 +814,18 @@ export default function Home() {
                   <option value="none">none</option>
                   <option value="raw">raw</option>
                 </select>
-                {bodyType === 'raw' && (
-                  <textarea
-                    ref={textareaRef}
-                    className="w-full h-40 text-xs font-mono"
-                    placeholder='{"key": "value"}'
-                    value={bodyContent}
-                    onChange={e => setBodyContent(e.target.value)}
-                  />
-                )}
-              </div>
-            )}
+              {bodyType === 'raw' && (
+                <textarea
+                  ref={textareaRef}
+                  className={`w-full h-40 text-xs font-mono ${rawBodyInvalid ? 'border-red-500' : ''}`}
+                  placeholder='{"key": "value"}'
+                  value={bodyContent}
+                  onChange={e => setBodyContent(formatJsonString(e.target.value))}
+                  onBlur={() => setBodyContent(prev => formatJsonString(prev))}
+                />
+              )}
+            </div>
+          )}
           </div>
 
           {/* Response Panel */}
