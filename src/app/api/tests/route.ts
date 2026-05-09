@@ -5,7 +5,17 @@ export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url')?.trim() || ''
   if (!url) return NextResponse.json({ tests: [] })
 
-  const tests = await prisma.requestTest.findMany({
+  const requestTest = (prisma as unknown as {
+    requestTest?: {
+      findMany: (args: unknown) => Promise<Array<{ id: string; name: string; expression: string }>>
+    }
+  }).requestTest
+
+  if (!requestTest) {
+    return NextResponse.json({ tests: [] })
+  }
+
+  const tests = await requestTest.findMany({
     where: { url },
     orderBy: { sortOrder: 'asc' },
   })
@@ -27,11 +37,29 @@ export async function PUT(req: NextRequest) {
 
   if (!requestId) return NextResponse.json({ error: 'requestId is required' }, { status: 400 })
 
+  const requestTest = (prisma as unknown as {
+    requestTest?: {
+      deleteMany: (args: unknown) => Promise<unknown>
+      createMany: (args: unknown) => Promise<unknown>
+    }
+  }).requestTest
+
+  if (!requestTest) {
+    return NextResponse.json({ error: 'Prisma client is outdated. Run prisma generate/deploy migrations.' }, { status: 500 })
+  }
+
   await prisma.$transaction(async (tx) => {
-    await tx.requestTest.deleteMany({ where: { requestId } })
+    const txRequestTest = (tx as unknown as {
+      requestTest: {
+        deleteMany: (args: unknown) => Promise<unknown>
+        createMany: (args: unknown) => Promise<unknown>
+      }
+    }).requestTest
+
+    await txRequestTest.deleteMany({ where: { requestId } })
 
     if (tests.length > 0) {
-      await tx.requestTest.createMany({
+      await txRequestTest.createMany({
         data: tests.map((t: { name?: string; expression?: string }, idx: number) => ({
           requestId,
           url,
