@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { AI_DIRECT_RAW_PROMPT, AI_PROMPT_PLACEHOLDER_BODY, AI_SYSTEM_PROMPT_STRICT_JSON } from '@/lib/ai/prompts'
 
 interface Header {
   key: string
@@ -630,13 +631,17 @@ export default function Home() {
         body: JSON.stringify({
           provider: aiProvider,
           model: aiModel.trim() || undefined,
-          prompt,
-          system: 'Responde breve y en formato JSON válido cuando sea posible.',
+          prompt: `${prompt}\n\nJSON actual del body request:\n${bodyContent || '{}'}`,
+          system: AI_SYSTEM_PROMPT_STRICT_JSON,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Error IA')
-      const assistantText = typeof data?.text === 'string' ? data.text : JSON.stringify(data, null, 2)
+      const assistantTextRaw = typeof data?.text === 'string' ? data.text : JSON.stringify(data, null, 2)
+      const assistantText = formatJsonString(assistantTextRaw)
+      if (!isValidJsonString(assistantText)) {
+        throw new Error('La IA no devolvió JSON válido. Ajusta el prompt e intenta de nuevo.')
+      }
       setAiMessages(prev => [...prev, { role: 'assistant', text: assistantText }])
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -650,6 +655,38 @@ export default function Home() {
     const lastAssistant = [...aiMessages].reverse().find(m => m.role === 'assistant')
     if (!lastAssistant) return
     setBodyContent(formatJsonString(lastAssistant.text))
+  }
+
+  const runAiDirectOnRaw = async () => {
+    setAiLoading(true)
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiProvider,
+          model: aiModel.trim() || undefined,
+          prompt: `${AI_DIRECT_RAW_PROMPT}\n\nContexto de request:\n- method: ${method}\n- url: ${url || '(sin url)'}\n\nJSON actual del body request:\n${bodyContent || '{}'}`,
+          system: AI_SYSTEM_PROMPT_STRICT_JSON,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Error IA')
+      const aiTextRaw = typeof data?.text === 'string' ? data.text : JSON.stringify(data, null, 2)
+      const aiText = formatJsonString(aiTextRaw)
+      if (!isValidJsonString(aiText)) {
+        throw new Error('La IA no devolvió JSON válido')
+      }
+      setBodyContent(aiText)
+      setSaveMessage({ type: 'ok', text: 'Body actualizado por IA' })
+      setTimeout(() => setSaveMessage(null), 2000)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setSaveMessage({ type: 'error', text: `IA: ${msg}` })
+      setTimeout(() => setSaveMessage(null), 3000)
+    } finally {
+      setAiLoading(false)
+    }
   }
 
   const loadModelsForProvider = async (provider: 'anthropic' | 'deepseek') => {
@@ -820,10 +857,10 @@ export default function Home() {
             onChange={e => setRequestName(e.target.value)}
             onBlur={handleSave}
           />
-          <button className="btn-secondary text-xs py-1 px-2" onClick={() => setShowEnvModal(true)}>
+          <button id="btn-open-env-modal" className="btn-secondary text-xs py-1 px-2" onClick={() => setShowEnvModal(true)}>
             Env
           </button>
-          <button className="btn-secondary text-xs py-1 px-2" onClick={() => setShowAiConfigModal(true)}>
+          <button id="btn-open-ai-config-modal" className="btn-secondary text-xs py-1 px-2" onClick={() => setShowAiConfigModal(true)}>
             IA Config
           </button>
           {saveMessage && (
@@ -947,12 +984,14 @@ export default function Home() {
                   </div>
                   <div className="w-10 flex-shrink-0 flex flex-col items-end">
                     <button
+                      id="btn-open-ai-chat-modal"
                       type="button"
                       className="btn-secondary text-xs py-1 px-2"
                       title="Asistente IA"
-                      onClick={() => setShowAiPanel(true)}
+                      onClick={runAiDirectOnRaw}
+                      disabled={aiLoading}
                     >
-                      IA
+                      {aiLoading ? '...' : 'IA'}
                     </button>
                   </div>
                 </div>
@@ -1156,6 +1195,7 @@ export default function Home() {
               <div>
                 <div className="text-xs text-gray-400 mb-1">Proveedor</div>
                 <select
+                  id="select-ai-provider-config"
                   className="w-full text-xs"
                   value={aiProvider}
                   onChange={async e => {
@@ -1172,6 +1212,7 @@ export default function Home() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs text-gray-400">Modelo</div>
                   <button
+                    id="btn-ai-load-models"
                     className="btn-secondary text-xs py-1 px-2"
                     onClick={() => loadModelsForProvider(aiProvider)}
                     disabled={aiModelsLoading}
@@ -1181,6 +1222,7 @@ export default function Home() {
                 </div>
                 {aiModelOptions.length > 0 ? (
                   <select
+                    id="select-ai-model-config"
                     className="w-full text-xs font-mono"
                     value={aiModel}
                     onChange={e => setAiModel(e.target.value)}
@@ -1191,6 +1233,7 @@ export default function Home() {
                   </select>
                 ) : (
                   <input
+                    id="input-ai-model-config"
                     className="w-full text-xs font-mono"
                     placeholder="modelo IA global"
                     value={aiModel}
@@ -1201,7 +1244,7 @@ export default function Home() {
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-3">
-              <button className="btn-primary text-xs" onClick={() => setShowAiConfigModal(false)}>Aceptar</button>
+              <button id="btn-close-ai-config-modal" className="btn-primary text-xs" onClick={() => setShowAiConfigModal(false)}>Aceptar</button>
             </div>
           </div>
         </div>
@@ -1244,7 +1287,7 @@ export default function Home() {
           <div className="bg-[#252526] border border-[#3c3c3c] rounded-lg p-4 w-[560px] max-w-[92vw]" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm font-semibold text-white">Asistente IA</h2>
-              <button className="text-xs text-gray-400 hover:text-white" onClick={() => setShowAiPanel(false)}>✕</button>
+              <button id="btn-close-ai-chat-modal" className="text-xs text-gray-400 hover:text-white" onClick={() => setShowAiPanel(false)}>✕</button>
             </div>
             <div className="flex items-center gap-2 mb-2">
               <select className="text-xs flex-1" value={aiProvider} onChange={e => setAiProvider(e.target.value as 'anthropic' | 'deepseek')}>
@@ -1267,16 +1310,17 @@ export default function Home() {
               ))}
             </div>
             <textarea
+              id="textarea-ai-prompt"
               className="w-full h-20 text-xs font-mono mb-2"
-              placeholder="Pide un body JSON..."
+              placeholder={AI_PROMPT_PLACEHOLDER_BODY}
               value={aiPrompt}
               onChange={e => setAiPrompt(e.target.value)}
             />
             <div className="flex gap-2 justify-end">
-              <button className="btn-secondary text-xs py-1 px-2" onClick={useLastAiResponseInBody}>
+              <button id="btn-ai-use-in-body" className="btn-secondary text-xs py-1 px-2" onClick={useLastAiResponseInBody}>
                 Usar en Body
               </button>
-              <button className="btn-primary text-xs py-1 px-2" onClick={sendAiPrompt} disabled={aiLoading || !aiPrompt.trim()}>
+              <button id="btn-ai-send-prompt" className="btn-primary text-xs py-1 px-2" onClick={sendAiPrompt} disabled={aiLoading || !aiPrompt.trim()}>
                 {aiLoading ? '...' : 'Enviar'}
               </button>
             </div>
