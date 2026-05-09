@@ -55,6 +55,35 @@ interface TestResult {
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const ENV_STORAGE_PREFIX = 'postman-clone-env:'
+const STANDARD_HEADER_KEYS = [
+  'Accept',
+  'Accept-Language',
+  'Authorization',
+  'Cache-Control',
+  'Connection',
+  'Content-Type',
+  'Cookie',
+  'Host',
+  'Origin',
+  'Pragma',
+  'Referer',
+  'User-Agent',
+  'X-API-Key',
+  'X-Requested-With',
+]
+const STANDARD_HEADER_VALUES = [
+  'application/json',
+  'application/xml',
+  'text/plain',
+  'multipart/form-data',
+  'application/x-www-form-urlencoded',
+  'Bearer {{token}}',
+  'Basic ',
+  'no-cache',
+  'keep-alive',
+  'gzip, deflate, br',
+  '*/*',
+]
 const JSON_TOKEN_REGEX = /"(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(?=\s*:)?|"(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b|[{}[\],:]/g
 
 const getJsonTokenClassName = (token: string) => {
@@ -767,23 +796,25 @@ export default function Home() {
                 </div>
                 {headers.map((header, i) => (
                   <div key={i} className="flex gap-2 mb-1">
-                    <input
-                      className="flex-1 text-xs font-mono"
-                      placeholder="Key"
-                      value={header.key}
-                      onChange={e => {
-                        const h = [...headers]
-                        h[i].key = e.target.value
+                  <input
+                    className="flex-1 text-xs font-mono"
+                    placeholder="Key"
+                    list="header-key-options"
+                    value={header.key}
+                    onChange={e => {
+                      const h = [...headers]
+                      h[i].key = e.target.value
                         setHeaders(h)
                       }}
                     />
-                    <input
-                      className="flex-1 text-xs font-mono"
-                      placeholder="Value"
-                      value={header.value}
-                      onChange={e => {
-                        const h = [...headers]
-                        h[i].value = e.target.value
+                  <input
+                    className="flex-1 text-xs font-mono"
+                    placeholder="Value"
+                    list="header-value-options"
+                    value={header.value}
+                    onChange={e => {
+                      const h = [...headers]
+                      h[i].value = e.target.value
                         setHeaders(h)
                       }}
                     />
@@ -935,6 +966,17 @@ export default function Home() {
       </div>
 
       {/* Hidden file input for Postman import */}
+      <datalist id="header-key-options">
+        {STANDARD_HEADER_KEYS.map(k => (
+          <option key={k} value={k} />
+        ))}
+      </datalist>
+      <datalist id="header-value-options">
+        {STANDARD_HEADER_VALUES.map(v => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+
       <input
         type="file"
         ref={fileInputRef}
