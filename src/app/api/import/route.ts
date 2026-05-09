@@ -39,6 +39,14 @@ interface PostmanCollection {
   item: PostmanItem[]
 }
 
+interface OpenApiDoc {
+  openapi?: string
+  swagger?: string
+  info?: { title?: string }
+  servers?: Array<{ url?: string }>
+  paths?: Record<string, Record<string, { summary?: string; operationId?: string }>>
+}
+
 function extractUrl(url: string | PostmanUrl | undefined): string {
   if (!url) return ''
   if (typeof url === 'string') return url
@@ -92,26 +100,90 @@ function flattenItems(items: PostmanItem[], parentName: string): {
   return result
 }
 
+function parseOpenApi(doc: OpenApiDoc): {
+  projectName: string
+  baseUrl: string
+  requests: {
+    name: string
+    method: string
+    url: string
+    headers: string
+    bodyType: string
+    bodyContent: string
+  }[]
+} {
+  const requests: {
+    name: string
+    method: string
+    url: string
+    headers: string
+    bodyType: string
+    bodyContent: string
+  }[] = []
+
+  const paths = doc.paths || {}
+  for (const [path, ops] of Object.entries(paths)) {
+    for (const [methodRaw, op] of Object.entries(ops || {})) {
+      const method = methodRaw.toUpperCase()
+      const name = op?.summary || op?.operationId || `${method} ${path}`
+      requests.push({
+        name,
+        method,
+        url: path,
+        headers: '[]',
+        bodyType: 'none',
+        bodyContent: '',
+      })
+    }
+  }
+
+  return {
+    projectName: doc.info?.title?.trim() || 'OpenAPI importado',
+    baseUrl: doc.servers?.[0]?.url?.trim() || '',
+    requests,
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const payload = body?.collection ? body.collection : body
     const projectNameInput = typeof body?.projectName === 'string' ? body.projectName.trim() : ''
+    let requests: {
+      name: string
+      method: string
+      url: string
+      headers: string
+      bodyType: string
+      bodyContent: string
+    }[] = []
+    let resolvedProjectName = 'Colección importada'
+    let resolvedBaseUrl = ''
 
-    if (!payload || !payload.info || !payload.item) {
-      return NextResponse.json({ error: 'Formato de colección Postman inválido' }, { status: 400 })
+    const isPostman = Boolean(payload?.info && payload?.item)
+    const isOpenApi = Boolean(payload?.openapi || payload?.swagger) && Boolean(payload?.paths)
+
+    if (isPostman) {
+      const collection = payload as PostmanCollection
+      requests = flattenItems(collection.item, '')
+      resolvedProjectName = collection.info.name || 'Colección importada'
+    } else if (isOpenApi) {
+      const openApi = parseOpenApi(payload as OpenApiDoc)
+      requests = openApi.requests
+      resolvedProjectName = openApi.projectName
+      resolvedBaseUrl = openApi.baseUrl
+    } else {
+      return NextResponse.json({ error: 'Formato inválido: se admite Postman Collection u OpenAPI' }, { status: 400 })
     }
 
-    const collection = payload as PostmanCollection
-    const requests = flattenItems(collection.item, '')
-
     if (requests.length === 0) {
-      return NextResponse.json({ error: 'La colección no contiene solicitudes' }, { status: 400 })
+      return NextResponse.json({ error: 'El archivo no contiene solicitudes importables' }, { status: 400 })
     }
 
     const project = await prisma.project.create({
       data: {
-        name: projectNameInput || collection.info.name || 'Colección importada',
+        name: projectNameInput || resolvedProjectName,
+        baseUrl: resolvedBaseUrl,
         requests: {
           create: requests.map(r => ({
             name: r.name,

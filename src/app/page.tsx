@@ -118,6 +118,7 @@ export default function Home() {
   const [lastRequest, setLastRequest] = useState<SentRequestSnapshot | null>(null)
   const [responseTestScript, setResponseTestScript] = useState('return response.status >= 200 && response.status < 300')
   const [responseTestResult, setResponseTestResult] = useState<{ pass: boolean; message: string } | null>(null)
+  const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -201,22 +202,38 @@ export default function Home() {
       bodyType,
       bodyContent,
     }
-    await fetch(`/api/requests/${activeRequestId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    loadProjects()
+    try {
+      const res = await fetch(`/api/requests/${activeRequestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('No fue posible guardar la solicitud')
+      await loadProjects()
+      setSaveMessage({ type: 'ok', text: 'Solicitud guardada' })
+      setTimeout(() => setSaveMessage(null), 2000)
+    } catch {
+      setSaveMessage({ type: 'error', text: 'Error al guardar la solicitud' })
+      setTimeout(() => setSaveMessage(null), 2500)
+    }
   }
 
   const handleSaveEnvironments = async () => {
     if (!activeProjectId) return
-    await fetch(`/api/projects/${activeProjectId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseUrl, token }),
-    })
-    loadProjects()
+    try {
+      const res = await fetch(`/api/projects/${activeProjectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl, token }),
+      })
+      if (!res.ok) throw new Error('No fue posible guardar environments')
+      await loadProjects()
+      setSaveMessage({ type: 'ok', text: 'Environments guardados' })
+      setTimeout(() => setSaveMessage(null), 2000)
+    } catch {
+      setSaveMessage({ type: 'error', text: 'Error al guardar environments' })
+      setTimeout(() => setSaveMessage(null), 2500)
+    }
   }
 
   const applyEnvironments = (value: string, currentBaseUrl: string, currentToken: string) =>
@@ -518,7 +535,7 @@ export default function Home() {
             <button
               className="btn-primary text-xs py-1 px-2"
               onClick={() => fileInputRef.current?.click()}
-              title="Importar Postman JSON"
+              title="Importar Postman/OpenAPI JSON"
             >
               ⬇
             </button>
@@ -629,6 +646,11 @@ export default function Home() {
             onChange={e => setRequestName(e.target.value)}
             onBlur={handleSave}
           />
+          {saveMessage && (
+            <span className={`text-xs ${saveMessage.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+              {saveMessage.text}
+            </span>
+          )}
         </div>
 
         {/* Environments */}
@@ -870,7 +892,7 @@ export default function Home() {
         type="file"
         ref={fileInputRef}
         onChange={handleImport}
-        accept=".json,application/json"
+        accept=".json,.yaml,.yml,application/json"
         className="hidden"
       />
 
