@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #1e1e1e;
+  --foreground: #d4d4d4;
 }
 
 @theme inline {
@@ -12,15 +12,99 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.method-get { color: #61affe; }
+.method-post { color: #49cc90; }
+.method-put { color: #fca130; }
+.method-delete { color: #f93e3e; }
+.method-patch { color: #50e3c2; }
+
+.sidebar {
+  background: #252526;
+  border-right: 1px solid #3c3c3c;
+}
+
+.request-panel {
+  background: #1e1e1e;
+}
+
+.response-panel {
+  background: #1e1e1e;
+  border-top: 1px solid #3c3c3c;
+}
+
+input, textarea, select {
+  background: #3c3c3c;
+  color: #d4d4d4;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #007acc;
+  outline: none;
+}
+
+button {
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-primary {
+  background: #007acc;
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #0098ff;
+}
+
+.btn-secondary {
+  background: #3c3c3c;
+  color: #d4d4d4;
+  border: 1px solid #555;
+}
+
+.btn-secondary:hover {
+  background: #4c4c4c;
+}
+
+.tab-active {
+  border-bottom: 2px solid #007acc;
+  color: white;
+}
+
+.tab-inactive {
+  color: #888;
+}
+
+.tab-inactive:hover {
+  color: #d4d4d4;
+}
+
+.scrollbar-custom::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb:hover {
+  background: #666;
 }
