@@ -1,6 +1,6 @@
 # Postman Clone
 
-Cliente API web construido con Next.js + Prisma (SQLite), con interfaz estilo Postman para:
+Cliente API web construido con Next.js + Prisma (Supabase PostgreSQL), con interfaz estilo Postman para:
 
 - Organizar solicitudes por proyectos
 - Definir environments por proyecto (`baseUrl` y `token`)
@@ -14,7 +14,7 @@ Cliente API web construido con Next.js + Prisma (SQLite), con interfaz estilo Po
 - Next.js (App Router)
 - React
 - Prisma
-- SQLite (`prisma/dev.db`)
+- Supabase PostgreSQL
 
 ## Requisitos
 
@@ -57,7 +57,7 @@ Credenciales:
 
 Notas:
 
-- El login valida contra la tabla `AppUser` en SQLite.
+- El login valida contra la tabla `AppUser` en Supabase PostgreSQL.
 - Se usa cookie de sesión `pc_session`.
 - Las rutas están protegidas por `middleware`.
 
