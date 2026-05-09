@@ -9,7 +9,7 @@
     "electron": "wait-on http://localhost:3000 && electron .",
     "build": "next build --webpack",
     "build:electron": "npm run build",
-    "build:macos": "npm run build && electron-builder --mac",
+    "build:macos": "npm run build && electron-builder --mac zip",
     "start": "next start",
     "lint": "eslint"
   },
