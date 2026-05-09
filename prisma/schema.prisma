@@ -37,4 +37,19 @@ model Request {
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  tests       RequestTest[]
+}
+
+model RequestTest {
+  id          String   @id @default(cuid())
+  requestId   String
+  url         String
+  name        String
+  expression  String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  request     Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([url])
 }

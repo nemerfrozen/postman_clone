@@ -297,6 +297,45 @@ export default function Home() {
       setHeaders([{ key: '', value: '' }])
     }
     setResponse(null)
+    void loadTestsForRequest(req.id, req.url)
+  }
+
+  const loadTestsForRequest = async (requestId: string, requestUrl: string) => {
+    const trimmedUrl = (requestUrl || '').trim()
+    if (!trimmedUrl) {
+      setResponseLineTests([
+        { id: `test-default-${requestId}`, name: 'Status 2xx', expression: 'response.status >= 200 && response.status < 300' },
+      ])
+      setResponseTestsSummary(null)
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/tests?url=${encodeURIComponent(trimmedUrl)}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'No fue posible cargar tests')
+
+      const tests = Array.isArray(data?.tests) ? data.tests : []
+      if (tests.length === 0) {
+        setResponseLineTests([
+          { id: `test-default-${requestId}`, name: 'Status 2xx', expression: 'response.status >= 200 && response.status < 300' },
+        ])
+      } else {
+        setResponseLineTests(
+          tests.map((t: { id?: string; name?: string; expression?: string }, idx: number) => ({
+            id: t.id || `test-${requestId}-${idx}`,
+            name: t.name || `Test ${idx + 1}`,
+            expression: t.expression || 'response.status >= 200 && response.status < 300',
+          }))
+        )
+      }
+      setResponseTestsSummary(null)
+    } catch {
+      setResponseLineTests([
+        { id: `test-default-${requestId}`, name: 'Status 2xx', expression: 'response.status >= 200 && response.status < 300' },
+      ])
+      setResponseTestsSummary(null)
+    }
   }
 
   const handleSave = async () => {
@@ -317,6 +356,15 @@ export default function Home() {
         body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error('No fue posible guardar la solicitud')
+      await fetch('/api/tests', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: activeRequestId,
+          url,
+          tests: responseLineTests.map(t => ({ name: t.name, expression: t.expression })),
+        }),
+      })
       await loadProjects()
       setSaveMessage({ type: 'ok', text: 'Solicitud guardada' })
       setTimeout(() => setSaveMessage(null), 2000)

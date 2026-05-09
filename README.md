@@ -50,10 +50,10 @@ App local:
 
 La aplicación requiere login.
 
-Credenciales por defecto:
+Credenciales:
 
-- Usuario: `admin`
-- Clave: `Q1w2e3r4/*`
+- No publiques usuarios/contraseñas reales en documentación.
+- Configura credenciales seguras por entorno (desarrollo, QA, producción).
 
 Notas:
 
@@ -196,6 +196,12 @@ Variables de entorno:
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_BASE_URL` (opcional, default `https://api.deepseek.com`)
 - `DEEPSEEK_MODEL` (opcional, default `deepseek-chat`)
+
+Buenas prácticas de seguridad:
+
+- Nunca subas `.env` al repositorio.
+- No compartas API keys en README, issues, PRs o logs.
+- Usa placeholders en ejemplos y variables de entorno en tiempo de ejecución.
 
 ## Estructura principal
 
