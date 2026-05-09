@@ -64,6 +64,14 @@ interface AiModelOption {
   provider: 'anthropic' | 'deepseek'
 }
 
+interface ResponseLineTest {
+  id: string
+  name: string
+  expression: string
+  pass?: boolean
+  message?: string
+}
+
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const ENV_STORAGE_PREFIX = 'postman-clone-env:'
 const AI_CONFIG_STORAGE_KEY = 'postman-clone-ai-config'
@@ -182,8 +190,10 @@ export default function Home() {
   const [testResults, setTestResults] = useState<TestResult[] | null>(null)
   const [runningTests, setRunningTests] = useState(false)
   const [lastRequest, setLastRequest] = useState<SentRequestSnapshot | null>(null)
-  const [responseTestScript, setResponseTestScript] = useState('return response.status >= 200 && response.status < 300')
-  const [responseTestResult, setResponseTestResult] = useState<{ pass: boolean; message: string } | null>(null)
+  const [responseLineTests, setResponseLineTests] = useState<ResponseLineTest[]>([
+    { id: 'test-status-2xx', name: 'Status 2xx', expression: 'response.status >= 200 && response.status < 300' },
+  ])
+  const [responseTestsSummary, setResponseTestsSummary] = useState<{ passed: number; total: number } | null>(null)
   const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
   const [showAiPanel, setShowAiPanel] = useState(false)
   const [aiProvider, setAiProvider] = useState<'anthropic' | 'deepseek'>('deepseek')
@@ -352,7 +362,8 @@ export default function Home() {
   const handleSend = async () => {
     setLoading(true)
     setResponse(null)
-    setResponseTestResult(null)
+    setResponseTestsSummary(null)
+    setResponseLineTests(prev => prev.map(t => ({ ...t, pass: undefined, message: undefined })))
     const fullUrl = resolveUrl(url, baseUrl, token)
     try {
       const cleanedHeaders = headers
@@ -597,24 +608,85 @@ export default function Home() {
     window.location.href = '/login'
   }
 
-  const runResponseTest = () => {
+  const runSingleResponseTest = (testId: string) => {
+    if (!response) return
+    setResponseLineTests(prev =>
+      prev.map(t => {
+        if (t.id !== testId) return t
+        try {
+          // eslint-disable-next-line no-new-func
+          const fn = new Function('response', `return (${t.expression})`)
+          const result = fn(response)
+          return {
+            ...t,
+            pass: result === true,
+            message: result === true ? 'OK' : `Falló: ${JSON.stringify(result)}`,
+          }
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e)
+          return { ...t, pass: false, message: `Error: ${message}` }
+        }
+      })
+    )
+  }
+
+  const runAllResponseTests = () => {
+    if (!response) return
+    const next = responseLineTests.map(t => {
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function('response', `return (${t.expression})`)
+        const result = fn(response)
+        return {
+          ...t,
+          pass: result === true,
+          message: result === true ? 'OK' : `Falló: ${JSON.stringify(result)}`,
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        return { ...t, pass: false, message: `Error: ${message}` }
+      }
+    })
+    setResponseLineTests(next)
+    const passed = next.filter(t => t.pass).length
+    setResponseTestsSummary({ passed, total: next.length })
+  }
+
+  const generateTestFromResponse = () => {
     if (!response) {
-      setResponseTestResult({ pass: false, message: 'No hay respuesta para evaluar' })
       return
     }
-    try {
-      // eslint-disable-next-line no-new-func
-      const fn = new Function('response', responseTestScript)
-      const result = fn(response)
-      if (result === true) {
-        setResponseTestResult({ pass: true, message: 'Test OK' })
-      } else {
-        setResponseTestResult({ pass: false, message: `Test falló. Resultado: ${JSON.stringify(result)}` })
-      }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      setResponseTestResult({ pass: false, message: `Error en test: ${message}` })
-    }
+
+    const bodyObj = (response.body && typeof response.body === 'object' && !Array.isArray(response.body))
+      ? (response.body as Record<string, unknown>)
+      : null
+    const bodyKeys = bodyObj ? Object.keys(bodyObj).slice(0, 5) : []
+
+    const generatedTests: ResponseLineTest[] = [
+      { id: 'test-status-2xx', name: 'Status 2xx', expression: 'response.status >= 200 && response.status < 300' },
+      ...bodyKeys.map((k) => ({
+        id: `test-has-key-${k.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+        name: `Body tiene key "${k}"`,
+        expression: `Object.prototype.hasOwnProperty.call(response.body, '${k}')`,
+      })),
+    ]
+
+    setResponseLineTests(generatedTests)
+    setResTab('test')
+    setResponseTestsSummary(null)
+  }
+
+  const addManualResponseTest = () => {
+    const id = `test-manual-${Date.now()}`
+    setResponseLineTests(prev => [
+      ...prev,
+      {
+        id,
+        name: 'Test manual',
+        expression: 'response.status === 200',
+      },
+    ])
+    setResTab('test')
   }
 
   const sendAiPrompt = async () => {
@@ -715,6 +787,25 @@ export default function Home() {
   const sidebarSearchLower = sidebarSearch.trim().toLowerCase()
   const usesBaseUrlVariable = /\{\{\s*baseUrl\s*\}\}/i.test(url)
   const rawBodyInvalid = bodyType === 'raw' && !isValidJsonString(bodyContent)
+  const responseAutocompleteOptions = (() => {
+    const base = [
+      'response.status',
+      'response.statusText',
+      'response.headers',
+      'response.body',
+      'response.status >= 200 && response.status < 300',
+      "Object.prototype.hasOwnProperty.call(response.body, 'key')",
+    ]
+    if (!response || typeof response.body !== 'object' || response.body === null || Array.isArray(response.body)) {
+      return base
+    }
+    const bodyKeys = Object.keys(response.body as Record<string, unknown>).slice(0, 30)
+    const bodyKeyOptions = bodyKeys.flatMap((k) => [
+      `response.body.${k}`,
+      `Object.prototype.hasOwnProperty.call(response.body, '${k}')`,
+    ])
+    return [...base, ...bodyKeyOptions]
+  })()
   const groupedRequestsByProject = new Map(
     projects.map(project => {
       const byUrl = project.requests.reduce<Record<string, StoredRequest[]>>((acc, req) => {
@@ -1067,7 +1158,7 @@ export default function Home() {
                 </div>
               )}
               {response && !testResults && resTab === 'body' && (
-                <pre className="json-view text-xs font-mono whitespace-pre-wrap break-all">{renderJsonSyntax(response.body)}</pre>
+                <pre id="pre-response-json" className="json-view text-xs font-mono whitespace-pre-wrap break-all">{renderJsonSyntax(response.body)}</pre>
               )}
               {response && !testResults && resTab === 'headers' && (
                 <div className="text-xs font-mono">
@@ -1083,22 +1174,50 @@ export default function Home() {
               )}
               {resTab === 'test' && (
                 <div className="space-y-2">
-                  <div className="text-xs text-gray-400">
-                    Usa `response.status`, `response.headers`, `response.body`. Debe retornar `true` para pasar.
-                  </div>
-                  <textarea
-                    className="w-full h-28 text-xs font-mono"
-                    value={responseTestScript}
-                    onChange={e => setResponseTestScript(e.target.value)}
-                  />
+                  <div className="text-xs text-gray-400">Usa expresiones booleanas con `response.status`, `response.headers`, `response.body`.</div>
                   <div className="flex items-center gap-2">
-                    <button className="btn-primary text-xs" onClick={runResponseTest}>Run Test</button>
-                    {responseTestResult && (
-                      <span className={`text-xs ${responseTestResult.pass ? 'text-green-400' : 'text-red-400'}`}>
-                        {responseTestResult.message}
-                      </span>
-                    )}
+                    <button className="btn-primary text-xs" onClick={runAllResponseTests}>Run All</button>
+                    <button id="btn-generate-test-from-response" className="btn-secondary text-xs" onClick={generateTestFromResponse}>
+                      Generar Test
+                    </button>
+                    <button id="btn-add-manual-test" className="btn-secondary text-xs" onClick={addManualResponseTest}>
+                      Agregar Test
+                    </button>
                   </div>
+                  <div className="space-y-2">
+                    {responseLineTests.map((t) => (
+                      <div key={t.id} className="border border-[#3c3c3c] rounded p-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <input
+                            className="flex-1 text-xs"
+                            value={t.name}
+                            onChange={e => setResponseLineTests(prev => prev.map(x => x.id === t.id ? { ...x, name: e.target.value } : x))}
+                          />
+                          <button className="btn-secondary text-xs py-1 px-2" onClick={() => runSingleResponseTest(t.id)}>Run</button>
+                          <button
+                            className="btn-secondary text-xs py-1 px-2 text-red-300"
+                            onClick={() => setResponseLineTests(prev => prev.filter(x => x.id !== t.id))}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                        <input
+                          className="w-full text-xs font-mono"
+                          list="response-test-expression-options"
+                          value={t.expression}
+                          onChange={e => setResponseLineTests(prev => prev.map(x => x.id === t.id ? { ...x, expression: e.target.value } : x))}
+                        />
+                        {t.message && (
+                          <div className={`text-xs mt-1 ${t.pass ? 'text-green-400' : 'text-red-400'}`}>{t.message}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {responseTestsSummary && (
+                    <div className={`text-xs mt-2 ${responseTestsSummary.passed === responseTestsSummary.total ? 'text-green-400' : 'text-yellow-400'}`}>
+                      Resultado: {responseTestsSummary.passed}/{responseTestsSummary.total} OK
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1114,6 +1233,11 @@ export default function Home() {
       </datalist>
       <datalist id="header-value-options">
         {STANDARD_HEADER_VALUES.map(v => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+      <datalist id="response-test-expression-options">
+        {responseAutocompleteOptions.map((v) => (
           <option key={v} value={v} />
         ))}
       </datalist>
