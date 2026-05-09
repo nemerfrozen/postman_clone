@@ -22,7 +22,12 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await fetch(url, fetchOptions)
-    const responseBody = await response.text()
+    let responseBody: unknown = null
+    try {
+      responseBody = await response.json()
+    } catch {
+      responseBody = { error: 'La respuesta del servidor no es JSON válido' }
+    }
     const responseHeaders: Record<string, string> = {}
     response.headers.forEach((value, key) => { responseHeaders[key] = value })
 
@@ -37,7 +42,7 @@ export async function POST(req: NextRequest) {
       status: 0,
       statusText: 'Error',
       headers: {},
-      body: String(error),
+      body: { error: String(error) },
     })
   }
 }

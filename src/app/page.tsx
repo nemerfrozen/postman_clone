@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 interface Header {
   key: string
@@ -30,7 +30,7 @@ interface ProxyResponse {
   status: number
   statusText: string
   headers: Record<string, string>
-  body: string
+  body: unknown
 }
 
 interface TestResult {
@@ -47,6 +47,39 @@ interface TestResult {
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const ENV_STORAGE_PREFIX = 'postman-clone-env:'
+const JSON_TOKEN_REGEX = /"(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(?=\s*:)?|"(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b|[{}[\],:]/g
+
+const getJsonTokenClassName = (token: string) => {
+  if (token.startsWith('"')) {
+    if (token.endsWith(':')) return 'json-key'
+    return 'json-string'
+  }
+  if (/^-?\d/.test(token)) return 'json-number'
+  if (token === 'true' || token === 'false') return 'json-boolean'
+  if (token === 'null') return 'json-null'
+  return 'json-punctuation'
+}
+
+const renderJsonSyntax = (value: unknown): ReactNode[] => {
+  const jsonText = JSON.stringify(value, null, 2)
+  const nodes: ReactNode[] = []
+  let lastIndex = 0
+
+  for (const match of jsonText.matchAll(JSON_TOKEN_REGEX)) {
+    const token = match[0]
+    const index = match.index ?? 0
+    if (index > lastIndex) nodes.push(jsonText.slice(lastIndex, index))
+    nodes.push(
+      <span key={`${index}-${token}`} className={getJsonTokenClassName(token)}>
+        {token}
+      </span>
+    )
+    lastIndex = index + token.length
+  }
+
+  if (lastIndex < jsonText.length) nodes.push(jsonText.slice(lastIndex))
+  return nodes
+}
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -196,6 +229,12 @@ export default function Home() {
           key: applyEnvironments(h.key, baseUrl, token),
           value: applyEnvironments(h.value, baseUrl, token),
         }))
+      if (token.trim() && !cleanedHeaders.some(h => h.key.toLowerCase() === 'authorization')) {
+        cleanedHeaders.push({
+          key: 'Authorization',
+          value: `Bearer ${token.trim()}`,
+        })
+      }
       const res = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -210,7 +249,7 @@ export default function Home() {
       const data = await res.json()
       setResponse(data)
     } catch {
-      setResponse({ status: 0, statusText: 'Error', headers: {}, body: 'Error de conexión' })
+      setResponse({ status: 0, statusText: 'Error', headers: {}, body: { error: 'Error de conexión' } })
     }
     setLoading(false)
   }
@@ -235,12 +274,21 @@ export default function Home() {
         let parsedHeaders = '[]'
         try {
           const parsed = JSON.parse(req.headers) as Header[]
-          parsedHeaders = JSON.stringify(parsed.map(h => ({
+          const resolvedHeaders = parsed.map(h => ({
             key: applyEnvironments(h.key || '', projectBaseUrl, projectToken),
             value: applyEnvironments(h.value || '', projectBaseUrl, projectToken),
-          })))
+          }))
+          if (projectToken.trim() && !resolvedHeaders.some(h => h.key.toLowerCase() === 'authorization')) {
+            resolvedHeaders.push({
+              key: 'Authorization',
+              value: `Bearer ${projectToken.trim()}`,
+            })
+          }
+          parsedHeaders = JSON.stringify(resolvedHeaders)
         } catch {
-          parsedHeaders = '[]'
+          parsedHeaders = projectToken.trim()
+            ? JSON.stringify([{ key: 'Authorization', value: `Bearer ${projectToken.trim()}` }])
+            : '[]'
         }
         const res = await fetch('/api/proxy', {
           method: 'POST',
@@ -262,7 +310,7 @@ export default function Home() {
           url: req.url,
           status: data.status,
           statusText: data.statusText,
-          body: typeof data.body === 'string' ? data.body.slice(0, 500) : JSON.stringify(data.body).slice(0, 500),
+          body: JSON.stringify(data.body, null, 2).slice(0, 500),
           duration,
           error: false,
         })
@@ -275,7 +323,7 @@ export default function Home() {
           url: req.url,
           status: 0,
           statusText: 'Error',
-          body: 'Error de conexión',
+          body: JSON.stringify({ error: 'Error de conexión' }),
           duration,
           error: true,
         })
@@ -305,10 +353,10 @@ export default function Home() {
           selectRequest(data.requests[0])
         }
       } else {
-        setResponse({ status: 400, statusText: 'Error', headers: {}, body: data.error || 'Error al importar' })
+        setResponse({ status: 400, statusText: 'Error', headers: {}, body: { error: data.error || 'Error al importar' } })
       }
     } catch {
-      setResponse({ status: 400, statusText: 'Error', headers: {}, body: 'Archivo JSON inválido' })
+      setResponse({ status: 400, statusText: 'Error', headers: {}, body: { error: 'Archivo JSON inválido' } })
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -372,6 +420,11 @@ export default function Home() {
     }
   }
 
+  const handleLogout = async () => {
+    await fetch('/api/logout', { method: 'POST' })
+    window.location.href = '/login'
+  }
+
   const activeProject = projects.find(p => p.id === activeProjectId)
   const activeRequest = activeProject?.requests.find(r => r.id === activeRequestId)
 
@@ -382,6 +435,7 @@ export default function Home() {
         <div className="p-3 border-b border-[#3c3c3c] flex items-center justify-between">
           <h1 className="text-sm font-semibold text-white">Postman Clone</h1>
           <div className="flex gap-1">
+            <button className="btn-secondary text-xs py-1 px-2" onClick={handleLogout}>Salir</button>
             <button className="btn-primary text-xs py-1 px-2" onClick={() => setShowNewProject(true)}>+</button>
             <button
               className="btn-primary text-xs py-1 px-2"
@@ -505,152 +559,154 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto scrollbar-custom px-3 py-2">
-          {tab === 'headers' && (
-            <div>
-              <div className="flex text-xs text-gray-500 mb-1 px-2">
-                <span className="w-1/2">Key</span>
-                <span className="w-1/2">Value</span>
-              </div>
-              {headers.map((header, i) => (
-                <div key={i} className="flex gap-2 mb-1">
-                  <input
-                    className="flex-1 text-xs font-mono"
-                    placeholder="Key"
-                    value={header.key}
-                    onChange={e => {
-                      const h = [...headers]
-                      h[i].key = e.target.value
-                      setHeaders(h)
-                    }}
-                  />
-                  <input
-                    className="flex-1 text-xs font-mono"
-                    placeholder="Value"
-                    value={header.value}
-                    onChange={e => {
-                      const h = [...headers]
-                      h[i].value = e.target.value
-                      setHeaders(h)
-                    }}
-                  />
-                  <button
-                    className="text-gray-500 hover:text-red-400 text-sm"
-                    onClick={() => setHeaders(headers.filter((_, j) => j !== i))}
-                  >
-                    ×
-                  </button>
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Tab Content */}
+          <div className="h-[30%] min-h-0 overflow-y-auto scrollbar-custom px-3 py-2">
+            {tab === 'headers' && (
+              <div>
+                <div className="flex text-xs text-gray-500 mb-1 px-2">
+                  <span className="w-1/2">Key</span>
+                  <span className="w-1/2">Value</span>
                 </div>
-              ))}
-              <button
-                className="text-xs text-[#007acc] mt-1"
-                onClick={() => setHeaders([...headers, { key: '', value: '' }])}
-              >
-                + Add header
-              </button>
-            </div>
-          )}
-
-          {tab === 'body' && (
-            <div>
-              <select
-                className="text-xs mb-2"
-                value={bodyType}
-                onChange={e => setBodyType(e.target.value)}
-              >
-                <option value="none">none</option>
-                <option value="raw">raw</option>
-              </select>
-              {bodyType === 'raw' && (
-                <textarea
-                  ref={textareaRef}
-                  className="w-full h-40 text-xs font-mono"
-                  placeholder='{"key": "value"}'
-                  value={bodyContent}
-                  onChange={e => setBodyContent(e.target.value)}
-                />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Response Panel */}
-        <div className="response-panel flex-shrink-0">
-          <div className="flex items-center border-b border-[#3c3c3c] px-3">
-            <div className="flex items-center gap-3">
-              {['body', 'headers'].map(t => (
+                {headers.map((header, i) => (
+                  <div key={i} className="flex gap-2 mb-1">
+                    <input
+                      className="flex-1 text-xs font-mono"
+                      placeholder="Key"
+                      value={header.key}
+                      onChange={e => {
+                        const h = [...headers]
+                        h[i].key = e.target.value
+                        setHeaders(h)
+                      }}
+                    />
+                    <input
+                      className="flex-1 text-xs font-mono"
+                      placeholder="Value"
+                      value={header.value}
+                      onChange={e => {
+                        const h = [...headers]
+                        h[i].value = e.target.value
+                        setHeaders(h)
+                      }}
+                    />
+                    <button
+                      className="text-gray-500 hover:text-red-400 text-sm"
+                      onClick={() => setHeaders(headers.filter((_, j) => j !== i))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
                 <button
-                  key={t}
-                  className={`py-2 text-xs font-medium ${resTab === t ? 'tab-active' : 'tab-inactive'}`}
-                  onClick={() => setResTab(t as typeof resTab)}
+                  className="text-xs text-[#007acc] mt-1"
+                  onClick={() => setHeaders([...headers, { key: '', value: '' }])}
                 >
-                  {t === 'body' ? 'Response' : 'Headers'}
+                  + Add header
                 </button>
-              ))}
-            </div>
-            {response && (
-              <div className="ml-auto flex items-center gap-2">
-                <span className={`text-xs font-bold ${response.status >= 200 && response.status < 300 ? 'text-green-400' : response.status >= 400 ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {response.status} {response.statusText}
-                </span>
-                <span className="text-xs text-gray-500">{response.body.length} bytes</span>
+              </div>
+            )}
+
+            {tab === 'body' && (
+              <div>
+                <select
+                  className="text-xs mb-2"
+                  value={bodyType}
+                  onChange={e => setBodyType(e.target.value)}
+                >
+                  <option value="none">none</option>
+                  <option value="raw">raw</option>
+                </select>
+                {bodyType === 'raw' && (
+                  <textarea
+                    ref={textareaRef}
+                    className="w-full h-40 text-xs font-mono"
+                    placeholder='{"key": "value"}'
+                    value={bodyContent}
+                    onChange={e => setBodyContent(e.target.value)}
+                  />
+                )}
               </div>
             )}
           </div>
-          <div className="overflow-auto max-h-64 scrollbar-custom p-3">
-            {!response && !loading && !testResults && !runningTests && (
-              <div className="text-sm text-gray-500">Haz clic en Send para obtener una respuesta</div>
-            )}
-            {loading && <div className="text-sm text-gray-500">Enviando solicitud...</div>}
-            {runningTests && (
-              <div className="text-sm text-gray-500">Ejecutando todos los tests...</div>
-            )}
-            {testResults && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-white">
-                    Tests: {testResults.filter(r => !r.error && r.status >= 200 && r.status < 400).length}/{testResults.length} OK
-                  </span>
+
+          {/* Response Panel */}
+          <div className="response-panel h-[70%] min-h-0 flex flex-col border-t border-[#3c3c3c]">
+            <div className="flex items-center border-b border-[#3c3c3c] px-3">
+              <div className="flex items-center gap-3">
+                {['body', 'headers'].map(t => (
                   <button
-                    className="text-xs text-gray-500 hover:text-white"
-                    onClick={() => setTestResults(null)}
+                    key={t}
+                    className={`py-2 text-xs font-medium ${resTab === t ? 'tab-active' : 'tab-inactive'}`}
+                    onClick={() => setResTab(t as typeof resTab)}
                   >
-                    × Clear
+                    {t === 'body' ? 'Response' : 'Headers'}
                   </button>
+                ))}
+              </div>
+              {response && (
+                <div className="ml-auto flex items-center gap-2">
+                  <span className={`text-xs font-bold ${response.status >= 200 && response.status < 300 ? 'text-green-400' : response.status >= 400 ? 'text-red-400' : 'text-yellow-400'}`}>
+                    {response.status} {response.statusText}
+                  </span>
+                  <span className="text-xs text-gray-500">{JSON.stringify(response.body, null, 2).length} bytes</span>
                 </div>
-                {testResults.map((r, i) => (
-                  <div
-                    key={i}
-                    className={`mb-1 p-2 rounded text-xs border ${r.error || r.status === 0 ? 'border-red-500/30 bg-red-500/10' : r.status >= 200 && r.status < 300 ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`font-bold method-${r.method.toLowerCase()}`}>{r.method}</span>
-                        <span className="text-gray-300">{r.projectName} / {r.requestName}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={r.error || r.status === 0 ? 'text-red-400' : r.status >= 200 && r.status < 300 ? 'text-green-400' : 'text-yellow-400'}>
-                          {r.status} {r.statusText}
-                        </span>
-                        <span className="text-gray-500">{r.duration}ms</span>
-                      </div>
-                    </div>
-                    <div className="text-gray-500 mt-1 truncate">{r.url}</div>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto scrollbar-custom p-3">
+              {!response && !loading && !testResults && !runningTests && (
+                <div className="text-sm text-gray-500">Haz clic en Send para obtener una respuesta</div>
+              )}
+              {loading && <div className="text-sm text-gray-500">Enviando solicitud...</div>}
+              {runningTests && (
+                <div className="text-sm text-gray-500">Ejecutando todos los tests...</div>
+              )}
+              {testResults && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-white">
+                      Tests: {testResults.filter(r => !r.error && r.status >= 200 && r.status < 400).length}/{testResults.length} OK
+                    </span>
+                    <button
+                      className="text-xs text-gray-500 hover:text-white"
+                      onClick={() => setTestResults(null)}
+                    >
+                      × Clear
+                    </button>
                   </div>
-                ))}
-              </div>
-            )}
-            {response && !testResults && resTab === 'body' && (
-              <pre className="text-xs font-mono whitespace-pre-wrap break-all">{response.body}</pre>
-            )}
-            {response && !testResults && resTab === 'headers' && (
-              <div className="text-xs font-mono">
-                {Object.entries(response.headers).map(([k, v]) => (
-                  <div key={k} className="mb-0.5"><span className="text-blue-400">{k}:</span> {v}</div>
-                ))}
-              </div>
-            )}
+                  {testResults.map((r, i) => (
+                    <div
+                      key={i}
+                      className={`mb-1 p-2 rounded text-xs border ${r.error || r.status === 0 ? 'border-red-500/30 bg-red-500/10' : r.status >= 200 && r.status < 300 ? 'border-green-500/30 bg-green-500/10' : 'border-yellow-500/30 bg-yellow-500/10'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold method-${r.method.toLowerCase()}`}>{r.method}</span>
+                          <span className="text-gray-300">{r.projectName} / {r.requestName}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={r.error || r.status === 0 ? 'text-red-400' : r.status >= 200 && r.status < 300 ? 'text-green-400' : 'text-yellow-400'}>
+                            {r.status} {r.statusText}
+                          </span>
+                          <span className="text-gray-500">{r.duration}ms</span>
+                        </div>
+                      </div>
+                      <div className="text-gray-500 mt-1 truncate">{r.url}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {response && !testResults && resTab === 'body' && (
+                <pre className="json-view text-xs font-mono whitespace-pre-wrap break-all">{renderJsonSyntax(response.body)}</pre>
+              )}
+              {response && !testResults && resTab === 'headers' && (
+                <div className="text-xs font-mono">
+                  {Object.entries(response.headers).map(([k, v]) => (
+                    <div key={k} className="mb-0.5"><span className="text-blue-400">{k}:</span> {v}</div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

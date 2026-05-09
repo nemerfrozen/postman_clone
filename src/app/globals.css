@@ -108,3 +108,27 @@ button {
 .scrollbar-custom::-webkit-scrollbar-thumb:hover {
   background: #666;
 }
+
+.json-view .json-key {
+  color: #9cdcfe;
+}
+
+.json-view .json-string {
+  color: #ce9178;
+}
+
+.json-view .json-number {
+  color: #b5cea8;
+}
+
+.json-view .json-boolean {
+  color: #569cd6;
+}
+
+.json-view .json-null {
+  color: #c586c0;
+}
+
+.json-view .json-punctuation {
+  color: #d4d4d4;
+}
