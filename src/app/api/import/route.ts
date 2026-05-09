@@ -95,12 +95,14 @@ function flattenItems(items: PostmanItem[], parentName: string): {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    const payload = body?.collection ? body.collection : body
+    const projectNameInput = typeof body?.projectName === 'string' ? body.projectName.trim() : ''
 
-    if (!body || !body.info || !body.item) {
+    if (!payload || !payload.info || !payload.item) {
       return NextResponse.json({ error: 'Formato de colección Postman inválido' }, { status: 400 })
     }
 
-    const collection = body as PostmanCollection
+    const collection = payload as PostmanCollection
     const requests = flattenItems(collection.item, '')
 
     if (requests.length === 0) {
@@ -109,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     const project = await prisma.project.create({
       data: {
-        name: collection.info.name || 'Colección importada',
+        name: projectNameInput || collection.info.name || 'Colección importada',
         requests: {
           create: requests.map(r => ({
             name: r.name,

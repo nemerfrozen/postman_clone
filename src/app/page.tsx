@@ -104,9 +104,12 @@ export default function Home() {
   const [resTab, setResTab] = useState<'body' | 'headers' | 'request' | 'test'>('body')
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('headers')
   const [showNewProject, setShowNewProject] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({})
   const [sidebarSearch, setSidebarSearch] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
+  const [importProjectName, setImportProjectName] = useState('')
+  const [pendingImportCollection, setPendingImportCollection] = useState<unknown | null>(null)
   const [baseUrl, setBaseUrl] = useState('')
   const [token, setToken] = useState('')
   const [loadingProjects, setLoadingProjects] = useState(true)
@@ -362,10 +365,28 @@ export default function Home() {
     try {
       const text = await file.text()
       const json = JSON.parse(text)
+      const suggestedName = typeof json?.info?.name === 'string' && json.info.name.trim()
+        ? json.info.name.trim()
+        : 'Colección importada'
+      setPendingImportCollection(json)
+      setImportProjectName(suggestedName)
+      setShowImportDialog(true)
+    } catch {
+      setResponse({ status: 400, statusText: 'Error', headers: {}, body: { error: 'Archivo JSON inválido' } })
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const confirmImportCollection = async () => {
+    if (!pendingImportCollection) return
+    try {
       const res = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(json),
+        body: JSON.stringify({
+          projectName: importProjectName.trim(),
+          collection: pendingImportCollection,
+        }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -378,9 +399,11 @@ export default function Home() {
         setResponse({ status: 400, statusText: 'Error', headers: {}, body: { error: data.error || 'Error al importar' } })
       }
     } catch {
-      setResponse({ status: 400, statusText: 'Error', headers: {}, body: { error: 'Archivo JSON inválido' } })
+      setResponse({ status: 500, statusText: 'Error', headers: {}, body: { error: 'Error al importar' } })
     }
-    if (fileInputRef.current) fileInputRef.current.value = ''
+    setPendingImportCollection(null)
+    setShowImportDialog(false)
+    setImportProjectName('')
   }
 
   const createProject = async () => {
@@ -866,6 +889,38 @@ export default function Home() {
             <div className="flex justify-end gap-2">
               <button className="btn-secondary text-xs" onClick={() => setShowNewProject(false)}>Cancelar</button>
               <button className="btn-primary text-xs" onClick={createProject}>Crear</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Project Name Modal */}
+      {showImportDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowImportDialog(false)}>
+          <div className="bg-[#252526] border border-[#3c3c3c] rounded-lg p-4 w-96" onClick={e => e.stopPropagation()}>
+            <h2 className="text-sm font-semibold text-white mb-2">Importar colección</h2>
+            <p className="text-xs text-gray-400 mb-3">Nombre del proyecto a crear en la base de datos:</p>
+            <input
+              className="w-full text-sm mb-3"
+              placeholder="Nombre del proyecto"
+              value={importProjectName}
+              onChange={e => setImportProjectName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmImportCollection()}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn-secondary text-xs"
+                onClick={() => {
+                  setShowImportDialog(false)
+                  setPendingImportCollection(null)
+                }}
+              >
+                Cancelar
+              </button>
+              <button className="btn-primary text-xs" onClick={confirmImportCollection} disabled={!importProjectName.trim()}>
+                Importar
+              </button>
             </div>
           </div>
         </div>
