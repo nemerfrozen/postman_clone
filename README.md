@@ -158,6 +158,45 @@ npm run start
 npm run lint
 ```
 
+## Servicio IA (Anthropic / DeepSeek)
+
+Endpoint interno:
+
+- `POST /api/ai/chat`
+- `GET /api/ai/models?provider=anthropic|deepseek`
+
+Body:
+
+```json
+{
+  "provider": "anthropic",
+  "prompt": "Resume este texto...",
+  "system": "Responde en español",
+  "model": "claude-3-5-sonnet-latest",
+  "maxTokens": 512,
+  "temperature": 0.2
+}
+```
+
+`provider` soportados:
+
+- `anthropic`
+- `deepseek`
+
+Listar modelos:
+
+- `GET /api/ai/models?provider=anthropic`
+- `GET /api/ai/models?provider=deepseek`
+- `GET /api/ai/models` (ambos)
+
+Variables de entorno:
+
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_MODEL` (opcional)
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_BASE_URL` (opcional, default `https://api.deepseek.com`)
+- `DEEPSEEK_MODEL` (opcional, default `deepseek-chat`)
+
 ## Estructura principal
 
 - `src/app/page.tsx`: UI principal (editor, envío, response, tests)
