@@ -9,6 +9,7 @@
     "electron": "wait-on http://localhost:3000 && electron .",
     "build": "next build --webpack",
     "build:electron": "npm run build",
+    "build:macos": "npm run build && electron-builder --mac",
     "start": "next start",
     "lint": "eslint"
   },
@@ -26,10 +27,24 @@
     "@types/react-dom": "^19",
     "concurrently": "^9.2.1",
     "electron": "^30.5.1",
+    "electron-builder": "^26.8.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "com.postmanclone.desktop",
+    "productName": "Postman Clone",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    }
   }
 }
