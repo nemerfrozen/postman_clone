@@ -104,6 +104,8 @@ export default function Home() {
   const [resTab, setResTab] = useState<'body' | 'headers' | 'request' | 'test'>('body')
   const [tab, setTab] = useState<'params' | 'headers' | 'body'>('headers')
   const [showNewProject, setShowNewProject] = useState(false)
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({})
+  const [sidebarSearch, setSidebarSearch] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [token, setToken] = useState('')
@@ -467,6 +469,18 @@ export default function Home() {
 
   const activeProject = projects.find(p => p.id === activeProjectId)
   const activeRequest = activeProject?.requests.find(r => r.id === activeRequestId)
+  const sidebarSearchLower = sidebarSearch.trim().toLowerCase()
+  const groupedRequestsByProject = new Map(
+    projects.map(project => {
+      const byUrl = project.requests.reduce<Record<string, StoredRequest[]>>((acc, req) => {
+        const groupKey = req.url?.trim() || '(sin url)'
+        if (!acc[groupKey]) acc[groupKey] = []
+        acc[groupKey].push(req)
+        return acc
+      }, {})
+      return [project.id, byUrl]
+    })
+  )
 
   return (
     <div className="flex h-screen overflow-hidden" onKeyDown={handleKeyDown}>
@@ -494,33 +508,84 @@ export default function Home() {
             </button>
           </div>
         </div>
+        <div className="px-3 py-2 border-b border-[#3c3c3c]">
+          <input
+            className="w-full text-xs"
+            placeholder="Buscar proyecto, URL o request..."
+            value={sidebarSearch}
+            onChange={e => setSidebarSearch(e.target.value)}
+          />
+        </div>
         <div className="flex-1 overflow-y-auto scrollbar-custom">
           {loadingProjects ? (
             <div className="p-4 text-sm text-gray-500">Cargando...</div>
           ) : projects.length === 0 ? (
             <div className="p-4 text-sm text-gray-500">Sin proyectos. Crea uno nuevo.</div>
           ) : (
-            projects.map(project => (
+            projects
+              .filter(project => {
+                if (!sidebarSearchLower) return true
+                const projectMatch = project.name.toLowerCase().includes(sidebarSearchLower)
+                if (projectMatch) return true
+                return project.requests.some(req =>
+                  req.name.toLowerCase().includes(sidebarSearchLower) ||
+                  (req.url || '').toLowerCase().includes(sidebarSearchLower)
+                )
+              })
+              .map(project => (
               <div key={project.id}>
                 <div
                   className={`flex items-center justify-between px-3 py-2 cursor-pointer text-sm hover:bg-[#2a2d2e] ${activeProjectId === project.id ? 'bg-[#37373d] text-white' : 'text-[#ccc]'}`}
                   onClick={() => setActiveProjectId(project.id)}
                 >
-                  <span className="truncate flex-1">{project.name}</span>
+                  <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                    <button
+                      className="text-xs text-gray-400 hover:text-white py-0 px-1"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setCollapsedProjects(prev => ({ ...prev, [project.id]: !prev[project.id] }))
+                      }}
+                      title={collapsedProjects[project.id] ? 'Expandir proyecto' : 'Colapsar proyecto'}
+                    >
+                      {collapsedProjects[project.id] ? '▸' : '▾'}
+                    </button>
+                    <span className="truncate">{project.name}</span>
+                  </div>
                   <div className="flex gap-1">
                     <button className="text-xs text-gray-500 hover:text-white py-0 px-1" onClick={(e) => { e.stopPropagation(); addRequest(project.id) }}>+</button>
                     <button className="text-xs text-gray-500 hover:text-red-400 py-0 px-1" onClick={(e) => { e.stopPropagation(); deleteProject(project.id) }}>×</button>
                   </div>
                 </div>
-                {activeProjectId === project.id && project.requests.map(req => (
-                  <div
-                    key={req.id}
-                    className={`flex items-center pl-6 pr-3 py-1.5 cursor-pointer text-xs hover:bg-[#2a2d2e] ${activeRequestId === req.id ? 'bg-[#2a2d2e] text-white' : 'text-[#999]'}`}
-                    onClick={() => selectRequest(req)}
-                  >
-                    <span className={`method-${req.method.toLowerCase()} font-bold mr-2 w-12 flex-shrink-0`}>{req.method}</span>
-                    <span className="truncate flex-1">{req.name}</span>
-                    <button className="text-gray-500 hover:text-red-400 py-0 px-1" onClick={(e) => { e.stopPropagation(); deleteRequest(req.id) }}>×</button>
+                {activeProjectId === project.id && !collapsedProjects[project.id] && Object.entries(groupedRequestsByProject.get(project.id) || {})
+                  .filter(([groupUrl, groupRequests]) => {
+                    if (!sidebarSearchLower) return true
+                    if (groupUrl.toLowerCase().includes(sidebarSearchLower)) return true
+                    return groupRequests.some(req => req.name.toLowerCase().includes(sidebarSearchLower))
+                  })
+                  .map(([groupUrl, groupRequests]) => (
+                  <div key={`${project.id}-${groupUrl}`}>
+                    <div className="pl-6 pr-3 py-1 text-[11px] text-gray-500 truncate border-l border-[#3c3c3c] ml-3">
+                      {groupUrl}
+                    </div>
+                    {groupRequests
+                      .filter(req => {
+                        if (!sidebarSearchLower) return true
+                        return (
+                          req.name.toLowerCase().includes(sidebarSearchLower) ||
+                          (req.url || '').toLowerCase().includes(sidebarSearchLower)
+                        )
+                      })
+                      .map(req => (
+                      <div
+                        key={req.id}
+                        className={`flex items-center pl-8 pr-3 py-1.5 cursor-pointer text-xs hover:bg-[#2a2d2e] ${activeRequestId === req.id ? 'bg-[#2a2d2e] text-white' : 'text-[#999]'}`}
+                        onClick={() => selectRequest(req)}
+                      >
+                        <span className={`method-${req.method.toLowerCase()} font-bold mr-2 w-12 flex-shrink-0`}>{req.method}</span>
+                        <span className="truncate flex-1">{req.name}</span>
+                        <button className="text-gray-500 hover:text-red-400 py-0 px-1" onClick={(e) => { e.stopPropagation(); deleteRequest(req.id) }}>×</button>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
